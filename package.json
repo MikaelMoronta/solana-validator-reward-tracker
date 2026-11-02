@@ -1,0 +1,27 @@
+{
+  "name": "solana-validator-reward-tracker",
+  "version": "1.0.0",
+  "description": "Tracks a Solana validator's staking rewards and block fees in PostgreSQL and serves them through a REST API",
+  "scripts": {
+    "pipeline": "tsx src/pipeline.ts",
+    "api": "tsx src/api.ts",
+    "verify": "tsx src/verify.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

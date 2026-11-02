@@ -1,0 +1,56 @@
+Current epoch 1074 (slotsInEpoch = 432000); latest completed = 1073
+Node's first available block: 0 (epoch 0)
+
+=== D) Which epochs still have a leader schedule? ===
+  epoch 1073: 2088 leader slots
+  epoch 1072: 1984 leader slots
+  epoch 1071: 2168 leader slots
+  epoch 1070: 2072 leader slots
+  epoch 1068: 2032 leader slots
+  epoch 1063: NOT AVAILABLE
+  epoch 1064: NOT AVAILABLE
+  epoch 1050: NOT AVAILABLE
+  epoch 1000: NOT AVAILABLE
+
+=== A) Friday's empty block, re-fetched with signatures ===
+  slot 462674208: 0 txs | rewards: none | Fee: none
+
+=== B) 15 of OUR blocks from epoch 1073 ===
+  slot 463536936: 0 txs | rewards: none | Fee: none
+  slot 463576651: 148 txs | rewards: Fee x1 | Fee: 2556899 lamports -> OUR IDENTITY
+  slot 463604674: 110 txs | rewards: Fee x1 | Fee: 5127976 lamports -> OUR IDENTITY
+  slot 463639489: 132 txs | rewards: Fee x1 | Fee: 2261331 lamports -> OUR IDENTITY
+  slot 463666264: 173 txs | rewards: Fee x1 | Fee: 4596176 lamports -> OUR IDENTITY
+  (rate limited on getBlock, waiting 2s)
+  (rate limited on getBlock, waiting 4s)
+  slot 463696935: 196 txs | rewards: Fee x1 | Fee: 3327262 lamports -> OUR IDENTITY
+  (rate limited on getBlock, waiting 2s)
+  slot 463728662: 282 txs | rewards: Fee x1 | Fee: 4280337 lamports -> OUR IDENTITY
+  slot 463754253: 381 txs | rewards: Fee x1 | Fee: 2517201 lamports -> OUR IDENTITY
+  slot 463774348: 232 txs | rewards: Fee x1 | Fee: 2453502 lamports -> OUR IDENTITY
+  (rate limited on getBlock, waiting 2s)
+  slot 463800315: 305 txs | rewards: Fee x1 | Fee: 5020904 lamports -> OUR IDENTITY
+  slot 463823318: 283 txs | rewards: Fee x1 | Fee: 3475380 lamports -> OUR IDENTITY
+  (rate limited on getBlock, waiting 2s)
+  slot 463849053: 358 txs | rewards: Fee x1 | Fee: 101534267 lamports -> OUR IDENTITY
+  (rate limited on getBlock, waiting 2s)
+  slot 463875668: 323 txs | rewards: Fee x1 | Fee: 25197163 lamports -> OUR IDENTITY
+  (rate limited on getBlock, waiting 2s)
+  slot 463900215: 257 txs | rewards: Fee x1 | Fee: 7167560 lamports -> OUR IDENTITY
+  slot 463927378: 192 txs | rewards: Fee x1 | Fee: 1696482 lamports -> OUR IDENTITY
+
+=== C1) 5 blocks from ANY validator, epoch 1073 (after Alpenglow) ===
+  slot 463537000: 0 txs | rewards: none | Fee: none
+  slot 463623400: 196 txs | rewards: Fee x1 | Fee: 2079437 lamports -> 6YY2VS...
+  slot 463709800: 415 txs | rewards: Fee x1 | Fee: 3998573 lamports -> BFmqBs...
+  slot 463796200: 240 txs | rewards: Fee x1 | Fee: 1301716 lamports -> EvnRmn...
+  slot 463882600: 474 txs | rewards: Fee x1 | Fee: 40109182 lamports -> GSTamp...
+
+=== C2) 5 blocks from ANY validator, epoch 1063 (before Alpenglow) ===
+  slot 459217000: 862 txs | rewards: Fee x1 | Fee: 2879575 lamports -> 8tjFeS...
+  slot 459303400: 1215 txs | rewards: Fee x1 | Fee: 10762022 lamports -> GEM1N1...
+  slot 459389800: 988 txs | rewards: Fee x1 | Fee: 19546554 lamports -> ana2y2...
+  slot 459476200: 1238 txs | rewards: Fee x1 | Fee: 11528435 lamports -> mineL1...
+  slot 459562600: 1515 txs | rewards: Fee x1 | Fee: 7503327 lamports -> 9eGrDo...
+
+Done.
