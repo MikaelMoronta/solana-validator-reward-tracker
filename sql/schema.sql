@@ -22,8 +22,9 @@ CREATE TABLE IF NOT EXISTS validators (
 
 -- ---------------------------------------------------------------------
 -- 2. staking_rewards: one row per validator per epoch.
--- Filled from getInflationReward. The reward EARNED in epoch N is PAID at
--- the first slot of epoch N+1 (that's effective_slot).
+-- Filled from getInflationReward. The reward EARNED in epoch N is PAID in
+-- the first block of epoch N+1 (that's effective_slot; usually the epoch's
+-- first slot, later if that slot was skipped).
 --
 -- Primary key (vote_account, epoch): there can only be one reward per
 -- validator per epoch. It's also what the upsert's ON CONFLICT checks, so
@@ -47,8 +48,8 @@ CREATE TABLE IF NOT EXISTS staking_rewards (
 -- ---------------------------------------------------------------------
 -- 3. leader_slots: one row per validator per assigned slot.
 -- Step 1: getLeaderSchedule says which slots the validator was assigned.
---         We save them right away as 'PENDING'. The RPC forgets schedules
---         after about a week, so this table IS our saved copy.
+--         We save them right away as 'PENDING'. The RPC only keeps about
+--         the last 8 epochs of schedules, so this table IS our saved copy.
 -- Step 2: getBlock fetches each slot, and the row gets its final status:
 --
 --   PENDING   saved from the schedule, not fetched yet

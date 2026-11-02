@@ -15,9 +15,11 @@ Default validator (from the assignment):
 
 | | Coverage | Result |
 |---|---|---|
-| Staking rewards | Epochs 1000–1074, **75 of 75**, 0 gaps | **32,988.26 SOL** total, avg 439.84 SOL/epoch, commission 100% (see [finding 5](#what-i-found-surprises-and-how-i-handled-them)) |
+| Staking rewards | Epochs 1000–1074, **75 of 75**, 0 gaps | **32,988.26 SOL** total, avg 439.84 SOL/epoch. Commission: not returned by the RPC since epoch 1002 (100% per Solscan, [finding 5](#what-i-found-surprises-and-how-i-handled-them)) |
 | Block fees | Epochs **1066–1074** (18,808 leader slots). 1000–1065 are `UNAVAILABLE`: the RPC no longer serves their leader schedules | **Complete for all 9 epochs: 156.16 SOL**, 0 gaps. 18,772 blocks produced, 9 empty, 27 skipped (skip rate 0.14%) |
-| Verification | 8 of 8 sampled staking epochs match the payout blocks; 5 of 5 block-fee spot checks match Solscan | See [How I checked the numbers](#how-i-checked-the-numbers) |
+| Verification | Staking: 8 of 8 sampled epochs match the payout blocks, and the 5 newest epochs Solscan lists (1058–1062) match Solscan. Block fees: 5 of 5 spot checks match Solscan | See [How I checked the numbers](#how-i-checked-the-numbers) |
+
+Fee coverage depends on when the pipeline runs: the RPC only keeps leader schedules for about the last 8 epochs, so epochs 1066–1074 were captured on 2026-11-01 and 11-02. A run today gets fees for the most recent ~8 epochs instead.
 
 ---
 
@@ -32,7 +34,7 @@ Default validator (from the assignment):
 ### 1. Install
 
 ```bash
-git clone <this repo>
+git clone https://github.com/MikaelMoronta/solana-validator-reward-tracker.git
 cd solana-validator-reward-tracker
 npm install
 ```
@@ -44,7 +46,7 @@ createdb -U postgres solana_tracker
 psql -U postgres -d solana_tracker -f sql/schema.sql
 ```
 
-Or in **pgAdmin**: create a database named `solana_tracker`, open the **Query Tool** on it, open `sql/schema.sql`, and press **F5**. The schema file is safe to run more than once.
+Or in **pgAdmin** (easiest on Windows, where `createdb` and `psql` usually aren't on the PATH): create a database named `solana_tracker`, open the **Query Tool** on it, open `sql/schema.sql`, and press **F5**. The schema file is safe to run more than once.
 
 ### 3. Configure
 
@@ -52,7 +54,7 @@ Or in **pgAdmin**: create a database named `solana_tracker`, open the **Query To
 cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
 ```
 
-Edit `.env` and set `PGPASSWORD` (and the other `PG*` values if your Postgres isn't the default `localhost:5432` / `postgres`). `.env` is git-ignored.
+Edit `.env` and set `PGPASSWORD` (and the other `PG*` values if your Postgres isn't the default `localhost:5432` / `postgres`). `.env` is git-ignored. If `.env` is missing, the pipeline fails with a Postgres login error, because `pg` falls back to your operating-system user name.
 
 Optional settings in `.env`:
 
@@ -73,9 +75,11 @@ All options are optional; the bare `--` passes them through npm to the script. `
 
 What to expect:
 
-- **Staking rewards:** about a minute (one request per epoch).
-- **Block fees, phase A:** about a minute; saves the leader schedule (the validator's assigned slots) for every epoch where the RPC still has it.
+- **Staking rewards:** about 3 minutes (one request per epoch, 2 seconds apart).
+- **Block fees, phase A:** about 3 minutes; saves the leader schedule (the validator's assigned slots) for every epoch where the RPC still has it.
 - **Block fees, phase B:** one request per assigned slot, about 2,000 per epoch. On the public endpoint this is roughly **1–1.5 hours per epoch**; a provider with a higher rate limit should be much faster (not tested). Progress and an estimate are printed every 50 slots. Newest epochs go first.
+
+To try it quickly, run a single epoch: `npm run pipeline -- --from N --to N`, with N the latest completed epoch (the pipeline's first lines print the current epoch; use the one before it). That takes about 70 minutes, almost all of it block fees.
 
 **It is safe to stop at any time** (Ctrl+C, crash, the PC going to sleep). Run the same command again and it continues where it left off. Re-running when everything is done does nothing.
 
@@ -105,7 +109,7 @@ npm run typecheck    # tsx runs TypeScript without checking types; this is the r
 
 ### Running on a schedule
 
-The pipeline is designed to run repeatedly. Each run only does unfinished work: new epochs, `FAILED` epochs and slots, and any slots not yet fetched. This matters most for block fees: leader schedules disappear after about a week, so fee history can only be built by running regularly. An epoch now lasts about a day, so a daily run is enough.
+The pipeline is designed to run repeatedly. Each run only does unfinished work: new epochs, `FAILED` epochs and slots, and any slots not yet fetched. This matters most for block fees: the RPC only keeps leader schedules for about the last 8 epochs (about a week), so fee history can only be built by running regularly. An epoch now lasts about a day, so a daily run is enough.
 
 Example cron entry, daily at 06:00 (an example only, not set up or tested here; cron may need the full path to `npm`):
 
@@ -163,7 +167,7 @@ Example: `http://localhost:3000/validators/FjkSLYmi6BJAJQn1iSLUGrPrBQjMaD4y1DVdn
 Conventions:
 
 - **Lamports are strings** (`"300325777915"`), so they're exact, with no precision loss. A `sol` number is included for reading convenience. Sums are done with JavaScript `BigInt`.
-- **Unknown is `null`, never `0`.** An epoch's `total` only appears when both staking and fees are complete. Fee totals in `/summary` only include epochs whose fee data is `COMPLETE`.
+- **Unknown is `null`, never `0`.** An epoch's `total` only appears when its fees are `COMPLETE` and its staking status is final (`COMPLETE`, or `NO_REWARD`, counted as 0). Fee totals in `/summary` only include epochs whose fee data is `COMPLETE`.
 - Errors return JSON with a status code: `400` for bad parameters (e.g. `to < from`, invalid address), `404` for a validator that hasn't been indexed.
 
 ---
@@ -172,7 +176,7 @@ Conventions:
 
 Solana is a decentralized network. Since it's decentralized, it depends on many independent servers to run the network and validate transactions. These servers are called validators. On the Solana network, time is measured in epochs and slots. A slot lasts about 200ms (it used to be 400ms), and an epoch is exactly 432,000 slots, which now works out to about a day. So instead of using regular date and time, the network goes by epoch and slot numbers.
 
-Staking is when you delegate your SOL to a validator's vote account. People stake their SOL because they earn a yield, and validators profit by keeping a percentage of that yield, called the commission. The yield comes from inflation: every epoch the network creates new SOL and splits it between validators based on how much stake they have and how many votes they cast. This validator's commission is 100%, so it keeps the full reward. The reward for epoch N gets paid at the first block of epoch N+1. Because inflation is set per year, when Solana shortened its slot time in 2026 each epoch got shorter, and so did the reward per epoch (see the slot-time table in [How I checked the numbers](#how-i-checked-the-numbers)).
+Staking is when you delegate your SOL to a validator's vote account. People stake their SOL because they earn a yield, and validators profit by keeping a percentage of that yield, called the commission. The yield comes from inflation: every epoch the network creates new SOL and splits it between validators based on how much stake they have and how reliably they vote. This validator's commission is 100%, so it keeps the full reward. The validator's reward for epoch N gets paid in the first block of epoch N+1; stakers' rewards are spread over the blocks right after it. Because inflation is set per year, when Solana shortened its slot time in 2026 each epoch got shorter, and so did the reward per epoch (see the slot-time table in [How I checked the numbers](#how-i-checked-the-numbers)).
 
 Validators also depend on that SOL being staked so that they have more voting power. The more stake a validator has, the more slots it gets assigned as the leader. When a validator is the leader of a slot, it gets the opportunity to produce a block, which is a mix of transactions. If the block is successfully produced, the validator keeps half of the base fees plus any priority fees paid (the other half of the base fees is burned). Unlike the staking reward, block fees are paid right away in the block itself, to the validator's identity account instead of its vote account.
 
@@ -200,7 +204,7 @@ npm run verify
    verify.ts  ── the cross-checks in "How I checked the numbers"
 ```
 
-`sql/schema.sql` holds the tables, constraints, index and the `index_gaps` view. `src/recon.ts` and `src/recon-fees.ts` are exploration scripts I ran **before** designing the schema; `docs/recon-2026-11-01.txt` is the output of `recon-fees.ts`, the evidence behind several decisions.
+`sql/schema.sql` holds the tables, constraints, index and the `index_gaps` view. `src/recon.ts` and `src/recon-fees.ts` are exploration scripts I ran **before** the schema was designed; `docs/recon-2026-11-01.txt` is the output of `recon-fees.ts`, the evidence behind several decisions.
 
 ### Database schema
 
@@ -243,15 +247,15 @@ The assignment leaves some details open; these are the assumptions I made.
 
 ## Design decisions
 
-**1. Raw SQL with `pg`, no ORM.** The data model is small and the interesting logic (resume, upserts, gap reporting) is SQL. Writing it directly keeps every query visible and reviewable (the API's are all in `queries.ts`). An ORM would hide exactly the parts I want to show.
+**1. Raw SQL with `pg`, no ORM.** The data model is small and the interesting logic (resume, upserts, gap reporting) is SQL. Writing it directly keeps every query visible and reviewable (the API's are all in `queries.ts`). An ORM would hide exactly the parts worth reviewing.
 
-**2. A small custom JSON-RPC client on `fetch`, no Solana SDK.** I wanted to see and control each failure layer myself: the HTTP status (429 rate limit, 403 forbidden), the JSON-RPC error code inside a `200` response, timeouts and retries. The SDK can do much of this too (it exposes error codes and retries 429s on its own), but writing it directly keeps every layer visible in one place, and it's under 300 lines including comments (`rpc.ts` + `solana.ts`).
+**2. A small custom JSON-RPC client on `fetch`, no Solana SDK.** The goal was to see and control each failure layer directly: the HTTP status (429 rate limit, 403 forbidden), the JSON-RPC error code inside a `200` response, timeouts and retries. The SDK can do much of this too (it exposes error codes and retries 429s on its own), but writing it directly keeps every layer visible in one place, and it's under 300 lines including comments (`rpc.ts` + `solana.ts`).
 
-**3. Progress lives in the database, not in memory.** Every epoch and every slot has a status. "What's left to do" is a SQL query (`generate_series` of the epoch range, minus what's `COMPLETE`), so a crash or Ctrl+C loses at most the request in flight, and a re-run naturally picks up `FAILED` items. All writes are upserts (`INSERT ... ON CONFLICT`), so redoing anything never creates duplicates.
+**3. Progress lives in the database, not in memory.** Every epoch and every slot has a status. "What's left to do" is a SQL query (`generate_series` of the epoch range, minus what's `COMPLETE`), so a crash or Ctrl+C loses at most the request in flight, and a re-run naturally picks up `FAILED` items. Every insert is an upsert (`INSERT ... ON CONFLICT`) and slot results update an existing row, so redoing anything never creates duplicates.
 
-**4. One row per assigned leader slot (not one total per epoch).** Recon showed the RPC only keeps leader schedules for about the last week of epochs, while the blocks stay available much longer. So the pipeline **saves every schedule first** (phase A) and then fetches blocks (phase B). The slot rows *are* the saved schedule, resume works per block (an epoch is 1–1.5 hours of fetching on the public endpoint), and completeness is provable: assigned slots = slots with a final status.
+**4. One row per assigned leader slot (not one total per epoch).** Recon showed the RPC only keeps leader schedules for about the last 8 epochs (about a week), while the blocks stay available much longer. So the pipeline **saves every schedule first** (phase A) and then fetches blocks (phase B). The slot rows *are* the saved schedule, resume works per block (an epoch is 1–1.5 hours of fetching on the public endpoint), and completeness is provable: assigned slots = slots with a final status.
 
-**5. Never record a zero I haven't verified.** A block with no `Fee` reward is re-fetched with its transaction list. Only 0 transactions becomes `EMPTY` with fee 0; transactions without a fee becomes an `ANOMALY` gap. Likewise `getInflationReward` returning `null` is recorded as `NO_REWARD` in `epoch_status`, not as a fake 0 reward, and the API returns `null` for anything not fully known.
+**5. Never record a zero I haven't verified.** A block with no `Fee` reward is re-fetched with its transaction list. Only 0 transactions becomes `EMPTY` with fee 0 (no transaction list at all becomes `FAILED`); transactions without a fee becomes an `ANOMALY` gap. Likewise `getInflationReward` returning `null` is recorded as `NO_REWARD` in `epoch_status`, not as a fake 0 reward, and the API returns `null` for anything not fully known.
 
 **6. Two kinds of failure: temporary vs. permanent.** Temporary (HTTP 429/5xx, timeouts, "node not ready" codes like `-32004`, `-32017`) are retried with exponential backoff (1s, 2s, 4s, 8s, 16s + jitter). Permanent answers (skipped slot `-32007`/`-32009`, pruned block `-32001`, bad request) return immediately so the pipeline can record the right status. After all retries a temporary failure is recorded as `FAILED` and retried on the next run.
 
@@ -267,7 +271,7 @@ The assignment leaves some details open; these are the assumptions I made.
 
 `npm run verify` runs three checks, from least to most independent:
 
-**1. Staking rewards vs. the payout block (consistency check).** For sample epochs, re-read the reward straight from the block where it was paid (`getBlock` at the effective slot, reward type `Voting`) and compare amount and post-balance. Same chain, different method: it catches bugs in how I fetched or stored rewards. I picked epochs around the interesting events (slot-time changes, Alpenglow):
+**1. Staking rewards vs. the payout block (consistency check).** For sample epochs, re-read the reward straight from the block where it was paid (`getBlock` at the effective slot, reward type `Voting`) and compare amount and post-balance. Same chain, different method: it catches bugs in how I fetched or stored rewards. I picked epochs around the interesting events (slot-time changes, Alpenglow), plus the latest epoch at the time. Results from the run on 2026-11-01 (re-running now checks 1074 as the last row):
 
 | Epoch | Paid in slot | Stored (lamports) | From block | Match |
 |---|---|---|---|---|
@@ -281,7 +285,7 @@ The assignment leaves some details open; these are the assumptions I made.
 | 1073 | 463,968,000 | 300,325,777,915 | 300,325,777,915 | ✅ |
 
 **2. Block production vs. Solana's own slot history (independent on-chain record).** `getBlockProduction` reports how many slots a validator led and how many blocks it produced, from Solana's SlotHistory record rather than the block archive the pipeline reads. That would independently confirm the `SKIPPED` vs. produced split. **Result: the public endpoint refuses this method (HTTP 403).** The script shows the node's exact error instead of guessing.
-Running `npm run verify` against a provider that allows this method would fill in this comparison; it's listed in next steps.
+Even with a provider that allows it, this method only covers the current or previous epoch, so it fits a daily run rather than a one-off check of past epochs.
 
 **3. Block fees vs. a block explorer (third party).** `verify` prints Solscan links for random `PRODUCED`, `EMPTY` and `SKIPPED` slots. I compared each one by hand:
 
@@ -306,7 +310,26 @@ Screenshot of the first block: [`docs/solscan-463600937.png`](docs/solscan-46360
 
 All three produced blocks match to the lamport, and Solscan names our identity account as the leader, which also confirms the leader-schedule slot math. Solscan's "Total Fees" is higher than its "Reward" (0.00309 vs 0.00201 SOL for the first block); the difference is the half of the base fees that is burned, which is why the pipeline stores the leader's share and not the total. This is a small sample (five slots covering all three outcomes), so it shows the method is right rather than proving every row.
 
-A third-party check of the staking rewards is not included: check 1 compares them against the payout blocks on chain instead. Comparing against an explorer that publishes per-epoch vote-account rewards is in next steps.
+**Staking rewards vs. Solscan (third party, by hand).** Solscan's Rewards tab for the vote account lists one `Voting` reward per epoch. On 2026-11-02 its list ended at epoch 1062, and its page shows SOL to 2 decimals (cut off, not rounded). I compared the five newest rows with the database: payout slot, amount, and the balance before and after the payout all match at that precision.
+
+| Epoch | Payout slot | Stored amount (SOL) | Solscan amount | Stored balance after (SOL) | Solscan balance after | Match |
+|---|---|---|---|---|---|---|
+| 1058 | 457,488,000 | 298.289500201 | 298.28 | 20,241.310304483 | 20,241.31 | ✅ |
+| 1059 | 457,920,000 | 298.228575511 | 298.22 | 20,541.333054440 | 20,541.33 | ✅ |
+| 1060 | 458,352,000 | 296.989008115 | 296.98 | 20,839.656966329 | 20,839.65 | ✅ |
+| 1061 | 458,784,000 | 298.348145729 | 298.34 | 21,139.138784818 | 21,139.13 | ✅ |
+| 1062 | 459,216,000 | 297.949504458 | 297.94 | 15,280.252261647 | 15,280.25 | ✅ |
+
+Screenshot: [`docs/solscan-vote-rewards.png`](docs/solscan-vote-rewards.png). Our side:
+
+```sql
+SELECT epoch, effective_slot, amount_lamports, post_balance_lamports
+FROM staking_rewards
+WHERE vote_account = 'FjkSLYmi6BJAJQn1iSLUGrPrBQjMaD4y1DVdnv3yaTsX' AND epoch BETWEEN 1058 AND 1062
+ORDER BY epoch;
+```
+
+Epochs 1063–1074 couldn't be compared there, because Solscan's list didn't include them yet; check 1 covers 1064–1066 and 1073 against the payout blocks.
 
 **Sanity check: the numbers behave the way the protocol says they should.** Per-epoch rewards dropped in four sharp steps, at exactly the epochs where Solana shortened its slot time. Inflation is paid per *year*, so shorter slots mean shorter epochs and a proportionally smaller share per epoch. The ratios match almost exactly:
 
@@ -327,7 +350,7 @@ Slot-time change epochs: [Solana's reduced slot times upgrade page](https://sola
 
 2. **Leader schedules expire, blocks don't.** On 2026-11-01 the RPC still had leader schedules for epochs 1066–1073 only, but served blocks all the way back (first available block: slot 0). Without the schedule you can't tell which blocks were this validator's. **Handled:** save every available schedule immediately (phase A); older epochs are recorded as `UNAVAILABLE` with the reason. Running the pipeline on a schedule going forward captures each epoch's schedule while it's still available; the second run on 2026-11-02 did exactly that for epoch 1074.
 
-3. **The public endpoint caps `getBlock` hard.** About one request every 2–2.5 seconds, so ~2,000 blocks per epoch is 1–1.5 hours, and the full week of available epochs 9–12 hours. I first assumed the bottleneck was response time (each `getBlock` takes ~1.5 s) and added parallel workers. Against a mock server (not in the repo) that was 3.5× faster; **on the real endpoint it was slower**, with many more 429s. The mock modeled the wrong bottleneck. **Handled:** removed the parallel workers, paced requests at a fixed 2 seconds, and made `RPC_URL` and `RPC_GAP_MS` configurable for a faster provider.
+3. **The public endpoint caps `getBlock` hard.** About one request every 2–2.5 seconds, so ~2,000 blocks per epoch is 1–1.5 hours, and the full week of available epochs 9–12 hours. Claude first assumed the bottleneck was response time (each `getBlock` takes ~1.5 s) and added parallel workers. Against a mock server (not in the repo) that was 3.5× faster; **on the real endpoint it was slower**, with many more 429s, which I noticed when the run's time estimate went up instead of down. The mock modeled the wrong bottleneck. **Handled:** removed the parallel workers, paced requests at a fixed 2 seconds, and made `RPC_URL` and `RPC_GAP_MS` configurable for a faster provider.
 
 4. **"Skipped" is ambiguous.** Error `-32007` means *"skipped, or missing due to ledger jump to recent snapshot"* and `-32009` *"skipped, or missing in long-term storage"*. The code alone can't separate "no block was produced" (a real 0) from "the data is missing" (a gap), and `getBlockProduction`, which would settle it from Solana's slot history, is refused by the public endpoint (HTTP 403). **Handled:** recorded as `SKIPPED` with the original error code kept on the row, so it can be re-classified later; confirming it is in [next steps](#what-id-do-next-with-more-time).
 
@@ -352,28 +375,38 @@ Slot-time change epochs: [Solana's reduced slot times upgrade page](https://sola
 
 ## What I'd do next with more time
 
-- **Run it on a schedule from now on.** Leader schedules disappear after about a week, so fee history can only be built going forward. A daily run never misses an epoch.
+- **Run it on a schedule from now on.** Leader schedules disappear after about 8 epochs (about a week), so fee history can only be built going forward. A daily run never misses an epoch.
 - **Find out why one leader window per epoch is missed** ([What I found](#what-i-found-surprises-and-how-i-handled-them), item 9), e.g. by checking whether other validators show the same pattern.
-- **Resolve "skipped vs. missing"** with `getBlockProduction` on a provider that allows it, or a second RPC provider, and re-classify `SKIPPED` rows that don't match.
-- **Check staking rewards against a third party** (an explorer or data provider that publishes per-epoch vote-account rewards), the way block fees were checked against Solscan.
-- **Older fee history** would need an archival source that knows historical leader schedules (e.g. a data warehouse or a provider's indexed API).
+- **Resolve "skipped vs. missing"** with `getBlockProduction` on a provider that allows it (part of the daily run, since it only covers the current or previous epoch), or a second RPC provider, and re-classify `SKIPPED` rows that don't match.
+- **Compare every staking epoch with a third party,** not just five. Solscan's CSV export of the rewards came back empty without a sign-in, and its list ended at 1062; a provider's API or StakeWiz could cover all 75 epochs to the lamport.
+- **Older fee history.** Each produced block's `Fee` reward names its leader, so fees for produced blocks could be rebuilt by scanning every block of an epoch (~432,000 requests, about 10 days per epoch at the public endpoint's pace). Skipped slots can't be attributed that way; that needs the historical leader schedule from an archival source.
 - **MEV / Jito tips** aren't included; they're a large part of real validator revenue but aren't protocol fees.
 - **Block revenue sharing (SIMD-0123).** When this proposal activates, validators can share part of their block fees with their stakers, so the fee a validator keeps would no longer equal the block's `Fee` reward and fee attribution would need to change.
 - **Commission per epoch.** `getInflationReward` no longer returns it, so it would need to be read from the vote account each epoch going forward, or from a data provider for history.
 - **Automated tests.** There are none. During development the RPC client was tested against throwaway mock servers (rate limits, skipped slots, bad JSON, interruptions) that aren't in the repo; a proper test suite is the first thing I'd add.
 - Track identity-account changes over time, multiple validators, API pagination, Docker Compose for one-command setup, and alerting when `index_gaps` grows.
 
+Known limitations (none of them affected this run's numbers):
+
+- **`NO_REWARD` is final.** If the RPC returns `null` for a reward that does exist, the epoch is never asked again, isn't listed in `index_gaps`, and counts as 0 in `total`. Re-asking those epochs on later runs would be safer. All 75 epochs here are `COMPLETE`.
+- **`UNAVAILABLE` is final too.** A node that answers `null` for a schedule near the retention edge loses that epoch for good. Re-asking recent `UNAVAILABLE` epochs would fix it.
+- **A pruned block (`-32001`) is recorded as `FAILED`** and re-asked on every run, though it will never come back.
+- **Transaction versions.** `getBlock` asks for transaction version 0, but blocks now also contain version-1 transactions (Solscan shows 78 in block 463600937). Fetching rewards only works; the transaction-list re-check of a block with no `Fee` reward might be refused if the block has version-1 transactions. It would be recorded as `FAILED` (a gap, never a zero). All 9 re-checked blocks in this run had 0 transactions.
+
 ---
 
 ## How I used AI
 
-I used two AI assistants: **Gemini** for a roadmap, Solana concepts and reviewing options, and **Claude** for writing and testing the code. I'm new to TypeScript and to Solana. Nearly all of the code, and many of the design proposals, came from AI, and I didn't fully understand all of it while it was being built. The calls I made myself came from evidence: I ran a recon script against the live chain before designing the schema, then chose one row per leader slot and to verify empty blocks before ever recording a zero. I also cut back features that weren't needed (parallel workers, adaptive pacing). After building it, I studied each part until I could explain how it works and where it's weak. If I did it again, I'd build a small core first and understand each piece before adding the next.
+I used two AI assistants: **Gemini** for an early roadmap, Solana background and the first recon script (`src/recon.ts`), and **Claude** to write nearly all of the other code and most of this README, including a first draft of this section. I'm new to TypeScript and to Solana, and I didn't understand much of the code while it was being written. Since then I've been going through it section by section, quizzing myself, so I can explain how each part works and where it's weak. I'm strongest on the SQL and the design, and still building fluency in TypeScript. The staking explanation started as my own draft, which AI corrected for facts.
+
+My own part was mostly judgment about the data. I ran a recon script against the live chain before the schema was designed. I chose to re-check empty blocks before ever recording a zero fee, and agreed to one row per leader slot once recon showed that schedules expire. I noticed the real run's time estimate getting worse with parallel workers, which led to removing them, and asked for other over-built parts to be cut. I ran the pipeline and the API on my own machine and checked the results in pgAdmin and by hand on Solscan. If I did it again, I'd build a small core first and understand each piece before adding the next.
 
 Places where an AI was wrong, and how it was caught:
 
 | Claim | From | What was actually true | How it was caught |
 |---|---|---|---|
-| Error `-32007` means the block was pruned | Gemini | It means *skipped, or missing after a snapshot jump*; "pruned" is `-32001` | Checked Solana's error-code source |
-| Parallel workers would speed up fetching (latency-bound) | Claude | The public endpoint is rate-capped; workers made it slower | The real run's time estimate went up instead of down; measured it, then removed the feature |
-| `verify` labeled every `getBlockProduction` failure "older than slot history" | Claude | The real error was HTTP 403, method forbidden | Changed the script to print the node's actual error |
+| Error `-32007` means the block was pruned | Gemini | It means *skipped, or missing after a snapshot jump*; "pruned" is `-32001` | Claude checked it against Solana's error-code source |
+| Parallel workers would speed up fetching (latency-bound) | Claude | The public endpoint is rate-capped; workers made it slower | I noticed the real run's time estimate going up instead of down; it was measured, then the feature was removed |
+| `verify` labeled every `getBlockProduction` failure "older than slot history" | Claude | The real error was HTTP 403, method forbidden | Claude changed the script to print the node's actual error |
+| Commission is 100%, stored from the RPC (in this README) | Claude | The RPC returns `null` from epoch 1002; the 100% comes from Solscan | I compared the README with the API's output |
 

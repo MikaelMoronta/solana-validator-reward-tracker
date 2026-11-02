@@ -2,7 +2,7 @@
 //
 // Phase A, SAVE SCHEDULES: for every epoch, fetch the leader schedule and save each assigned
 //   slot as a PENDING row in leader_slots. This runs for ALL epochs first, because the RPC
-//   forgets schedules after about a week, so we capture them while we still can.
+//   only keeps schedules for about the last 8 epochs, so we capture them while we still can.
 //   Epochs whose schedule is already gone are recorded as UNAVAILABLE (a permanent gap).
 //
 // Phase B, FETCH BLOCKS: for every PENDING or FAILED slot (newest epoch first), fetch the
@@ -119,7 +119,10 @@ async function classifyBlock(slot: number, block: Block | null, identity: string
   // No Fee reward at all. Don't assume zero: re-fetch WITH transaction signatures and count them.
   const detailed = await getBlock(slot, "signatures");
   if (detailed === null) return failed(null, "re-check getBlock returned no block");
-  const txCount = detailed.signatures?.length ?? 0;
+  // No signature list means we can't count the transactions, so we can't prove the block is empty.
+  const signatures = detailed.signatures;
+  if (!Array.isArray(signatures)) return failed(null, "re-check returned no signature list");
+  const txCount = signatures.length;
 
   if (txCount === 0) {
     // Truly empty block: no transactions means no fees. Zero is the correct, verified answer.

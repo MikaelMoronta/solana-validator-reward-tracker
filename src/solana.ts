@@ -24,7 +24,7 @@ export interface EpochSchedule {
 
 export interface InflationReward {
   epoch: number;
-  effectiveSlot: number;      // slot where it was paid (first slot of the next epoch)
+  effectiveSlot: number;      // slot where it was paid (the first block of the next epoch)
   amount: number;             // lamports
   postBalance: number;        // lamports, vote account balance after the payout
   commission: number | null;  // percent; may be missing

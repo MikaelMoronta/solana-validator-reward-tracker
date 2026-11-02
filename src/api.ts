@@ -36,11 +36,13 @@ function toSol(lamports: string | null): number | null {
 }
 
 // Read an optional whole-number query parameter like ?from=1000.
+const MAX_EPOCH = 2147483647; // largest value a Postgres INTEGER column can hold
+
 function intParam(value: unknown, name: string): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number(value);
-  if (typeof value !== "string" || !Number.isInteger(parsed) || parsed < 0) {
-    throw new HttpError(400, `${name} must be a whole number`);
+  if (typeof value !== "string" || value.trim() === "" || !Number.isInteger(parsed) || parsed < 0 || parsed > MAX_EPOCH) {
+    throw new HttpError(400, `${name} must be a whole number between 0 and ${MAX_EPOCH}`);
   }
   return parsed;
 }
@@ -57,7 +59,7 @@ async function resolveRange(req: Request): Promise<{ vote: string; from: number;
   const indexed = await indexedEpochRange(vote);
   const from = intParam(req.query.from, "from") ?? indexed.min ?? 0;
   const to = intParam(req.query.to, "to") ?? indexed.max ?? 0;
-  if (to < from) throw new HttpError(400, "to must be >= from");
+  if (to < from) throw new HttpError(400, `to (${to}) must be >= from (${from}); a missing from/to defaults to the indexed range`);
   if (to - from > 5000) throw new HttpError(400, "range too large (max 5000 epochs)");
   return { vote, from, to };
 }

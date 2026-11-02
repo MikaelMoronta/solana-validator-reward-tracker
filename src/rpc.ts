@@ -116,12 +116,19 @@ async function sendOnce(method: string, params: unknown[]): Promise<unknown> {
   }
 
   // The body should be JSON. If it isn't (e.g. a proxy error page), treat it as temporary.
-  let body: JsonRpcResponse;
+  let parsed: unknown;
   try {
-    body = (await response.json()) as JsonRpcResponse;
+    parsed = await response.json();
   } catch {
     throw new RpcError(`${method}: response was not valid JSON`, null, response.status, true);
   }
+
+  // A valid reply is an object with either "result" or "error". Anything else (e.g. "null" or {})
+  // is a broken reply: treat it as temporary instead of crashing on it later.
+  if (typeof parsed !== "object" || parsed === null || !("result" in parsed || "error" in parsed)) {
+    throw new RpcError(`${method}: reply had neither a result nor an error`, null, response.status, true);
+  }
+  const body = parsed as JsonRpcResponse;
 
   // Failure layer 2: HTTP was fine, but Solana put an error inside the JSON.
   if (body.error) {
